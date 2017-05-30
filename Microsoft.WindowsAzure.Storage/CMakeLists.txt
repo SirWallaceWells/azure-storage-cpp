@@ -10,6 +10,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 option(BUILD_TESTS "Build test codes" OFF)
 option(BUILD_SAMPLES "Build sample codes" OFF)
+option(USE_LIBXML2 "Build with libxml2 instead of libxml++" OFF)
 
 # Platform (not compiler) specific settings
 if(UNIX)
@@ -22,28 +23,33 @@ if(UNIX)
 	# Prefer the latest (make the latest one first)
     list(REVERSE OPENSSL_ROOT_DIR)
 
-	# There is a dependency chain Libxml++ -> glibmm -> gobject -> glib -> lintl, however, for some reason,
-	# with homebrew at least, the -L for where lintl resides is left out. So, we try to find it where homebrew
-	# would put it, or allow the user to specify it
-	if(NOT GETTEXT_LIB_DIR)
-		message(WARNING "No GETTEXT_LIB_DIR specified, assuming: /usr/local/opt/gettext/lib")
-		set(GETTEXT_LIB_DIR "/usr/local/opt/gettext/lib")
-	endif()
-	# If we didn't find it where homebrew would put it, and it hasn't been specified, then we have to throw an error
-	if(NOT IS_DIRECTORY "${GETTEXT_LIB_DIR}")
-		message(ERROR "We couldn't find your gettext lib directory (${GETTEXT_LIB_DIR}). Please re-run cmake with -DGETTEXT_LIB_DIR=<your gettext lib dir>. This is usually where libintl.a and libintl.dylib reside.")
-	endif()
+    set(_OPENSSL_VERSION "")
+    find_package(OpenSSL 1.0.0 REQUIRED)
+  endif()
+  
+  if(USE_LIBXML2)
+    find_package(LibXml2 REQUIRED)
+    add_definitions(-DUSE_LIB_XML_2)
+  else()
+    # There is a dependency chain Libxml++ -> glibmm -> gobject -> glib -> lintl, however, for some reason,
+    # with homebrew at least, the -L for where lintl resides is left out. So, we try to find it where homebrew
+    # would put it, or allow the user to specify it
+    if(NOT GETTEXT_LIB_DIR)
+      message(WARNING "No GETTEXT_LIB_DIR specified, assuming: /usr/local/opt/gettext/lib")
+      set(GETTEXT_LIB_DIR "/usr/local/opt/gettext/lib")
+    endif()
+    # If we didn't find it where homebrew would put it, and it hasn't been specified, then we have to throw an error
+    if(NOT IS_DIRECTORY "${GETTEXT_LIB_DIR}")
+      message(ERROR "We couldn't find your gettext lib directory (${GETTEXT_LIB_DIR}). Please re-run cmake with -DGETTEXT_LIB_DIR=<your gettext lib dir>. This is usually where libintl.a and libintl.dylib reside.")
+    endif()
 
-	# if we actually have a GETTEXT_LIB_DIR we add the linker flag for it
-	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -L${GETTEXT_LIB_DIR}")
+    # if we actually have a GETTEXT_LIB_DIR we add the linker flag for it
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -L${GETTEXT_LIB_DIR}")
+
+    find_package(Glibmm REQUIRED)
+    find_package(LibXML++ REQUIRED)
   endif()
 
-  set(_OPENSSL_VERSION "")
-  find_package(OpenSSL 1.0.0 REQUIRED)
-
-
-  find_package(Glibmm REQUIRED)
-  find_package(LibXML++ REQUIRED)
   find_package(UUID REQUIRED)
   find_package(Casablanca REQUIRED)
 
