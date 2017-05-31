@@ -171,7 +171,7 @@ protected:
 #ifdef _WIN32
     CComPtr<IXmlReader> m_reader;
 #elif defined(USE_LIB_XML_2)
-    xmlTextReaderPtr m_reader;
+    std::shared_ptr<xmlTextReader> m_reader;
     std::string m_data;
 #else
     std::shared_ptr<xmlpp::TextReader> m_reader;
@@ -276,8 +276,8 @@ private:
 #ifdef _WIN32
     CComPtr<IXmlWriter> m_writer;
 #elif defined(USE_LIB_XML_2)
-    xmlTextWriterPtr m_writer;
-    xmlBufferPtr m_buf;
+    std::shared_ptr<xmlTextWriter> m_writer;
+    std::shared_ptr<xmlBuffer> m_buf;
 #else // LINUX
     std::shared_ptr<xmlpp::Document> m_document;
     std::stack<xmlpp::Element*> m_elementStack;

@@ -104,15 +104,12 @@ namespace azure { namespace storage { namespace core { namespace xml {
         concurrency::streams::stringstreambuf buffer;
         stream.read_to_end(buffer).get();
         m_data = buffer.collection();
-#ifdef USE_LIB_XML_2
-        if (m_data.empty())
-            m_reader = nullptr;
-        else
-            m_reader = xmlReaderForMemory(reinterpret_cast<const char*>(m_data.data()), static_cast<unsigned int>(m_data.size()), NULL, NULL, 0);
-#else
         if (m_data.empty())
             m_reader.reset();
         else
+#ifdef USE_LIB_XML_2
+            m_reader.reset(xmlReaderForMemory(reinterpret_cast<const char*>(m_data.data()), static_cast<unsigned int>(m_data.size()), NULL, NULL, 0), [=](xmlTextReaderPtr reader) { xmlFreeTextReader(reader); });
+#else
             m_reader.reset(new xmlpp::TextReader(reinterpret_cast<const unsigned char*>(m_data.data()), static_cast<unsigned int>(m_data.size())));
 #endif
 #endif
@@ -135,9 +132,9 @@ namespace azure { namespace storage { namespace core { namespace xml {
             return !m_continueParsing; // no XML document to read
 
 #ifdef USE_LIB_XML_2
-        while (m_continueParsing && xmlTextReaderRead(m_reader))
+        while (m_continueParsing && xmlTextReaderRead(m_reader.get()))
         {
-            auto nodeType = xmlTextReaderNodeType(m_reader);
+            auto nodeType = xmlTextReaderNodeType(m_reader.get());
 #else
         while (m_continueParsing && m_reader->read())
         {
@@ -156,7 +153,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
 #ifdef _WIN32
                 if (m_reader->IsEmptyElement())
 #elif defined(USE_LIB_XML_2)
-                if (xmlTextReaderIsEmptyElement(m_reader))
+                if (xmlTextReaderIsEmptyElement(m_reader.get()))
 #else
                 if (m_reader->is_empty_element())
 #endif
@@ -220,7 +217,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         }
         return utility::string_t(pwszLocalName);
 #elif defined(USE_LIB_XML_2)
-        return utility::string_t(reinterpret_cast<char const*>(xmlTextReaderLocalName(m_reader)));
+        return utility::string_t(reinterpret_cast<char const*>(xmlTextReaderLocalName(m_reader.get())));
 #else
         return utility::string_t(m_reader->get_local_name().raw());
 #endif
@@ -259,7 +256,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
 
         return utility::string_t(pwszValue);
 #elif defined(USE_LIB_XML_2)
-        return utility::string_t(reinterpret_cast<char const*>(xmlTextReaderValue(m_reader)));
+        return utility::string_t(reinterpret_cast<char const*>(xmlTextReaderValue(m_reader.get())));
 #else
         return utility::string_t(m_reader->get_value().raw());
 #endif
@@ -277,7 +274,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         }
         return (hr == S_OK);
 #elif defined(USE_LIB_XML_2)
-        return xmlTextReaderMoveToFirstAttribute(m_reader);
+        return xmlTextReaderMoveToFirstAttribute(m_reader.get());
 #else
         return m_reader->move_to_first_attribute();
 #endif
@@ -295,7 +292,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         }
         return (hr == S_OK);
 #elif defined(USE_LIB_XML_2)
-        return xmlTextReaderMoveToNextAttribute(m_reader);
+        return xmlTextReaderMoveToNextAttribute(m_reader.get());
 #else
         return m_reader->move_to_next_attribute();
 #endif
@@ -343,9 +340,9 @@ namespace azure { namespace storage { namespace core { namespace xml {
             throw utility::details::create_system_error(error);
         }
 #elif defined(USE_LIB_XML_2)
-        m_buf = xmlBufferCreate();
-        m_writer = xmlNewTextWriterMemory(m_buf, 0);
-        xmlTextWriterStartDocument(m_writer, NULL, NULL, NULL);
+        m_buf.reset(xmlBufferCreate(), [=](xmlBufferPtr buffer) { xmlBufferFree(buffer); });
+        m_writer.reset(xmlNewTextWriterMemory(m_buf.get(), 0), [=](xmlTextWriterPtr writer) { xmlFreeTextWriter(writer); });
+        xmlTextWriterStartDocument(m_writer.get(), NULL, NULL, NULL);
 #else // LINUX
         m_document.reset(new xmlpp::Document());
         m_elementStack = std::stack<xmlpp::Element*>();
@@ -371,9 +368,9 @@ namespace azure { namespace storage { namespace core { namespace xml {
             throw utility::details::create_system_error(error);
         }
 #elif defined(USE_LIB_XML_2) // LINUX no libxml++
-        xmlTextWriterEndDocument(m_writer);
-        xmlFreeTextWriter(m_writer);
-        xmlBufferFree(m_buf);
+        xmlTextWriterEndDocument(m_writer.get());
+        m_writer.reset();
+        m_buf.reset();
 #else // LINUX
         auto result = m_document->write_to_string();
         *m_stream << reinterpret_cast<const char *>(result.c_str());
@@ -393,7 +390,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         }
 #elif USE_LIB_XML_2
         xmlTextWriterStartElementNS(
-            m_writer, 
+            m_writer.get(), 
             reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(elementPrefix).c_str()), 
             reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(elementName).c_str()), 
             reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(namespaceName).c_str()));
@@ -441,7 +438,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
             throw utility::details::create_system_error(error);
         }
 #elif defined(USE_LIB_XML_2)
-        xmlTextWriterEndElement(m_writer);
+        xmlTextWriterEndElement(m_writer.get());
 #else 
         m_elementStack.pop();
 #endif
@@ -501,7 +498,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         {
 #ifdef USE_LIB_XML_2
             xmlTextWriterWriteAttribute(
-                m_writer,
+                m_writer.get(),
                 reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(name).c_str()), 
                 reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(value).c_str()));
 #else
@@ -514,7 +511,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         {
 #ifdef USE_LIB_XML_2
             xmlTextWriterWriteAttributeNS(
-                m_writer, 
+                m_writer.get(), 
                 reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(prefix).c_str()), 
                 reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(name).c_str()), 
                 reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(namespaceUri).c_str()), 
@@ -560,7 +557,7 @@ namespace azure { namespace storage { namespace core { namespace xml {
         write_start_element_with_prefix(prefix, elementName);
 #ifdef USE_LIB_XML_2
         xmlTextWriterWriteElement(
-            m_writer, 
+            m_writer.get(), 
             reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(elementName).c_str()), 
             reinterpret_cast<const unsigned char*>(utility::conversions::to_utf8string(value).c_str()));
 #else
